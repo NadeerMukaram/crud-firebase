@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { initializeApp } from 'firebase/app'
 import { getFirestore, collection, addDoc, getDocs, updateDoc, deleteDoc, doc } from 'firebase/firestore'
+import { getAuth, onAuthStateChanged, signOut } from 'firebase/auth'
+import Login from './components/Login'
 import './App.css'
 
 // Your Firebase configuration
@@ -17,24 +19,42 @@ const firebaseConfig = {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig)
 const db = getFirestore(app)
+const auth = getAuth(app)
 
 function App() {
+  const [user, setUser] = useState(null)
   const [items, setItems] = useState([])
   const [newItem, setNewItem] = useState("")
   const [editItem, setEditItem] = useState({ id: null, name: "" })
 
-  // Read - Fetch items from Firebase
   useEffect(() => {
-    const fetchItems = async () => {
-      const querySnapshot = await getDocs(collection(db, "items"))
-      const itemsList = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }))
-      setItems(itemsList)
-    }
-    fetchItems()
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setUser(user)
+      if (user) {
+        fetchItems()
+      }
+    })
+
+    return () => unsubscribe()
   }, [])
+
+  const fetchItems = async () => {
+    const querySnapshot = await getDocs(collection(db, "items"))
+    const itemsList = querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }))
+    setItems(itemsList)
+  }
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth)
+      setItems([])
+    } catch (error) {
+      console.error("Error signing out: ", error)
+    }
+  }
 
   // Create - Add new item
   const handleSubmit = async (e) => {
@@ -43,9 +63,16 @@ function App() {
 
     try {
       const docRef = await addDoc(collection(db, "items"), {
-        name: newItem
+        name: newItem,
+        dateAdded: new Date().toISOString(),
+        dateUpdated: new Date().toISOString()
       })
-      setItems([...items, { id: docRef.id, name: newItem }])
+      setItems([...items, { 
+        id: docRef.id, 
+        name: newItem,
+        dateAdded: new Date().toISOString(),
+        dateUpdated: new Date().toISOString()
+      }])
       setNewItem("")
     } catch (error) {
       console.error("Error adding document: ", error)
@@ -59,10 +86,15 @@ function App() {
     try {
       const itemRef = doc(db, "items", id)
       await updateDoc(itemRef, {
-        name: editItem.name
+        name: editItem.name,
+        dateUpdated: new Date().toISOString()
       })
       setItems(items.map(item => 
-        item.id === id ? { ...item, name: editItem.name } : item
+        item.id === id ? { 
+          ...item, 
+          name: editItem.name,
+          dateUpdated: new Date().toISOString()
+        } : item
       ))
       setEditItem({ id: null, name: "" })
     } catch (error) {
@@ -80,9 +112,24 @@ function App() {
     }
   }
 
+  // Helper function to format date
+  const formatDate = (dateString) => {
+    return new Date(dateString).toLocaleString()
+  }
+
+  if (!user) {
+    return <Login onLogin={() => fetchItems()} />
+  }
+
   return (
     <div className="container">
-      <h1>Firebase CRUD App</h1>
+      <div className="header">
+        <h1>Firebase CRUD App</h1>
+        <div className="user-info">
+          <span>Welcome, {user.email}</span>
+          <button onClick={handleLogout}>Logout</button>
+        </div>
+      </div>
       
       {/* Create */}
       <form onSubmit={handleSubmit}>
@@ -96,29 +143,48 @@ function App() {
       </form>
 
       {/* Read & Update & Delete */}
-      <ul>
-        {items.map(item => (
-          <li key={item.id}>
-            {editItem.id === item.id ? (
-              <div>
-                <input
-                  type="text"
-                  value={editItem.name}
-                  onChange={(e) => setEditItem({ ...editItem, name: e.target.value })}
-                />
-                <button onClick={() => handleUpdate(item.id)}>Save</button>
-                <button onClick={() => setEditItem({ id: null, name: "" })}>Cancel</button>
-              </div>
-            ) : (
-              <div>
-                {item.name}
-                <button onClick={() => setEditItem({ id: item.id, name: item.name })}>Edit</button>
-                <button onClick={() => handleDelete(item.id)}>Delete</button>
-              </div>
-            )}
-          </li>
-        ))}
-      </ul>
+      <table>
+        <thead>
+          <tr>
+            <th>Item Name</th>
+            <th>Date Added</th>
+            <th>Last Updated</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map(item => (
+            <tr key={item.id}>
+              <td>
+                {editItem.id === item.id ? (
+                  <input
+                    type="text"
+                    value={editItem.name}
+                    onChange={(e) => setEditItem({ ...editItem, name: e.target.value })}
+                  />
+                ) : (
+                  item.name
+                )}
+              </td>
+              <td>{formatDate(item.dateAdded)}</td>
+              <td>{formatDate(item.dateUpdated)}</td>
+              <td>
+                {editItem.id === item.id ? (
+                  <>
+                    <button onClick={() => handleUpdate(item.id)}>Save</button>
+                    <button onClick={() => setEditItem({ id: null, name: "" })}>Cancel</button>
+                  </>
+                ) : (
+                  <>
+                    <button onClick={() => setEditItem({ id: item.id, name: item.name })}>Edit</button>
+                    <button onClick={() => handleDelete(item.id)}>Delete</button>
+                  </>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }
