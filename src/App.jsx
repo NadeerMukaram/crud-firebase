@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react'
 import { initializeApp } from 'firebase/app'
 import { getFirestore, collection, addDoc, getDocs, updateDoc, deleteDoc, doc } from 'firebase/firestore'
-import { getAnalytics } from "firebase/analytics"
 import './App.css'
 
 // Your Firebase configuration
@@ -17,7 +16,6 @@ const firebaseConfig = {
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig)
-const analytics = getAnalytics(app)
 const db = getFirestore(app)
 
 function App() {
